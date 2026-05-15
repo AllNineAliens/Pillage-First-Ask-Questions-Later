@@ -225,7 +225,7 @@ export const cancelUnitImprovementEvent = createController(
       }),
     });
 
-    cancelledEvents.forEach((cancelledEvent) => {
+    for (const cancelledEvent of cancelledEvents) {
       const resourcesToRefund = calculateUnitUpgradeCostForLevel(
         cancelledEvent.unitId,
         cancelledEvent.level,
@@ -237,7 +237,7 @@ export const cancelUnitImprovementEvent = createController(
         Date.now(),
         resourcesToRefund,
       );
-    });
+    }
   });
 
   triggerKick();
@@ -254,8 +254,7 @@ export const cancelDemolitionEvent = createController(
         events
       WHERE
         id = (
-          SELECT
-            id
+          SELECT id
           FROM
             events
           WHERE
@@ -268,13 +267,9 @@ export const cancelDemolitionEvent = createController(
                       CAST(JSON_EXTRACT(meta, '$.level') AS INTEGER)
                 )
               )
-          ORDER BY
-            resolves_at,
-            id
+          ORDER BY resolves_at, id
           LIMIT 1
-          )
-      RETURNING
-        id;
+          );
     `,
     bind: {
       $village_id: villageId,
