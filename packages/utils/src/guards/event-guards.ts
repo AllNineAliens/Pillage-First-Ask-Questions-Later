@@ -25,12 +25,17 @@ export const isBuildingLevelChangeEvent = (
 export const isBuildingDowngradeEvent = (
   event: GameEvent,
 ): event is GameEvent<'buildingLevelChange'> => {
-  return isBuildingLevelChangeEvent(event) && event.previousLevel > event.level;
+  return (
+    (isBuildingLevelChangeEvent(event) && event.previousLevel > event.level) ||
+    isBuildingDestructionEvent(event)
+  );
 };
 
 const buildingEventTypes = new Set<GameEventType>([
   'buildingConstruction',
   'buildingLevelChange',
+  'buildingDestruction',
+  'buildingScheduledConstruction',
 ]);
 
 export const isBuildingEvent = (

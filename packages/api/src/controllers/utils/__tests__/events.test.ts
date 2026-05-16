@@ -276,6 +276,23 @@ describe('events utils', () => {
       ).toThrow('Building level cannot exceed max level');
     });
 
+    test('buildingConstruction - should throw if target level exceeds max level', async () => {
+      const database = await prepareTestDatabase();
+      const villageId = getAnyVillageId(database);
+      const { maxLevel } = getBuildingDefinition('MAIN_BUILDING');
+
+      expect(() =>
+        validateEventCreationPrerequisites(
+          database,
+          createBuildingLevelChangeEventMock({
+            villageId,
+            buildingId: 'MAIN_BUILDING',
+            level: maxLevel + 1,
+          }),
+        ),
+      ).toThrow('Building level cannot exceed max level');
+    });
+
     test('buildingConstruction - should throw if building field is already occupied', async () => {
       const database = await prepareTestDatabase();
       const villageId = getAnyVillageId(database);
@@ -552,13 +569,144 @@ describe('events utils', () => {
       ).not.toThrow();
     });
 
-    test('isBuildingDestructionEvent - should throw if building destruction is already in progress', async () => {
+    test('isBuildingDowngradeEvent - should throw if main building level is lower than 10', async () => {
       const database = await prepareTestDatabase();
       const villageId = getAnyVillageId(database);
+
+      database.exec({
+        sql: `
+          UPDATE building_fields
+          SET level = 9
+          WHERE village_id = $village_id
+          AND building_id = (SELECT id FROM building_ids WHERE building = 'MAIN_BUILDING')
+        `,
+        bind: { $village_id: villageId },
+      });
+
+      expect(() =>
+        validateEventCreationPrerequisites(
+          database,
+          createBuildingLevelChangeEventMock({
+            villageId,
+            previousLevel: 2,
+            level: 1,
+          }),
+        ),
+      ).toThrow('Main building level 10 is required to downgrade buildings');
+    });
+
+    test('isBuildingDowngradeEvent - should not throw if main building level is at least 10', async () => {
+      const database = await prepareTestDatabase();
+      const villageId = getAnyVillageId(database);
+
+      database.exec({
+        sql: `
+          UPDATE building_fields
+          SET level = 10
+          WHERE village_id = $village_id
+          AND building_id = (SELECT id FROM building_ids WHERE building = 'MAIN_BUILDING')
+        `,
+        bind: { $village_id: villageId },
+      });
+
+      expect(() =>
+        validateEventCreationPrerequisites(
+          database,
+          createBuildingLevelChangeEventMock({
+            villageId,
+            previousLevel: 2,
+            level: 1,
+          }),
+        ),
+      ).not.toThrow();
+    });
+
+    test('isBuildingDowngradeEvent - should throw if another downgrade event is already in queue', async () => {
+      const database = await prepareTestDatabase();
+      const villageId = getAnyVillageId(database);
+
+      database.exec({
+        sql: `
+          UPDATE building_fields
+          SET level = 10
+          WHERE village_id = $village_id
+          AND building_id = (SELECT id FROM building_ids WHERE building = 'MAIN_BUILDING')
+        `,
+        bind: { $village_id: villageId },
+      });
+
+      insertEvents(database, [
+        createBuildingLevelChangeEventMock({
+          villageId,
+          previousLevel: 2,
+          level: 1,
+        }),
+      ]);
+
+      expect(() =>
+        validateEventCreationPrerequisites(
+          database,
+          createBuildingLevelChangeEventMock({
+            villageId,
+            previousLevel: 3,
+            level: 2,
+          }),
+        ),
+      ).toThrow('Main building is busy');
+    });
+
+    test('isBuildingDowngradeEvent - should throw if a building destruction event is already in queue', async () => {
+      const database = await prepareTestDatabase();
+      const villageId = getAnyVillageId(database);
+
+      database.exec({
+        sql: `
+          UPDATE building_fields
+          SET level = 10
+          WHERE village_id = $village_id
+          AND building_id = (SELECT id FROM building_ids WHERE building = 'MAIN_BUILDING')
+        `,
+        bind: { $village_id: villageId },
+      });
 
       insertEvents(database, [
         createBuildingDestructionEventMock({
           villageId,
+          previousLevel: 10,
+          level: 0,
+        }),
+      ]);
+
+      expect(() =>
+        validateEventCreationPrerequisites(
+          database,
+          createBuildingLevelChangeEventMock({
+            villageId,
+            previousLevel: 2,
+            level: 1,
+          }),
+        ),
+      ).toThrow('Main building is busy');
+    });
+
+    test('isBuildingDestructionEvent - should throw if a building downgrade event is already in queue', async () => {
+      const database = await prepareTestDatabase();
+      const villageId = getAnyVillageId(database);
+
+      database.exec({
+        sql: `
+          UPDATE building_fields
+          SET level = 10
+          WHERE village_id = $village_id AND field_id = 38;
+        `,
+        bind: { $village_id: villageId },
+      });
+
+      insertEvents(database, [
+        createBuildingLevelChangeEventMock({
+          villageId,
+          previousLevel: 2,
+          level: 1,
         }),
       ]);
 
@@ -567,6 +715,39 @@ describe('events utils', () => {
           database,
           createBuildingDestructionEventMock({
             villageId,
+          }),
+        ),
+      ).toThrow('Main building is busy');
+    });
+
+    test('isBuildingDestructionEvent - should throw if building destruction is already in progress', async () => {
+      const database = await prepareTestDatabase();
+      const villageId = getAnyVillageId(database);
+
+      database.exec({
+        sql: `
+          UPDATE building_fields
+          SET level = 10
+          WHERE village_id = $village_id AND field_id = 38;
+        `,
+        bind: { $village_id: villageId },
+      });
+
+      insertEvents(database, [
+        createBuildingDestructionEventMock({
+          villageId,
+          previousLevel: 10,
+          level: 0,
+        }),
+      ]);
+
+      expect(() =>
+        validateEventCreationPrerequisites(
+          database,
+          createBuildingDestructionEventMock({
+            villageId,
+            previousLevel: 9,
+            level: 0,
           }),
         ),
       ).toThrow('Main building is busy');

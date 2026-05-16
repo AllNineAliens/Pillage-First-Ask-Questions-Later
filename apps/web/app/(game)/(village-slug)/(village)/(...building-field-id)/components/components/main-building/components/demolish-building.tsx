@@ -60,10 +60,11 @@ export const DemolishBuilding = () => {
     buildingFieldToDemolish.buildingId,
     buildingFieldToDemolish.id,
   );
-  const { getBuildingDowngradeErrorBag } = useDemolishBuildingErrorBag(
-    buildingFieldToDemolish.id,
-    buildingFieldToDemolish.buildingId,
-  );
+  const { getBuildingDowngradeErrorBag, getDemolishBuildingErrorBag } =
+    useDemolishBuildingErrorBag(
+      buildingFieldToDemolish.id,
+      buildingFieldToDemolish.buildingId,
+    );
 
   const [targetLevel, setTargetLevel] = useState<number>(
     Math.max(buildingFieldToDemolish.level - 1, 0),
@@ -74,6 +75,8 @@ export const DemolishBuilding = () => {
   }, [buildingFieldToDemolish.level]);
 
   const buildingDowngradeErrorBag = getBuildingDowngradeErrorBag();
+  const demolishBuildingErrorBag = getDemolishBuildingErrorBag();
+
   const buildingName = t(
     `BUILDINGS.${buildingFieldToDemolish.buildingId}.NAME`,
   );
@@ -252,12 +255,16 @@ export const DemolishBuilding = () => {
         </div>
       </SectionContent>
       <SectionContent>
-        <ErrorBag errorBag={buildingDowngradeErrorBag} />
+        <ErrorBag
+          errorBag={[...buildingDowngradeErrorBag, ...demolishBuildingErrorBag]}
+        />
         <div className="flex gap-2 flex-wrap">
           <Button
             size="fit"
             disabled={
-              !canDemolishBuildings || buildingDowngradeErrorBag.length > 0
+              !canDemolishBuildings ||
+              buildingDowngradeErrorBag.length > 0 ||
+              demolishBuildingErrorBag.length > 0
             }
             onClick={() => openModal('DOWNGRADE')}
           >

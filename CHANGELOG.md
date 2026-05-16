@@ -1,3 +1,12 @@
+## Version 0.4.21
+
+#### May 16, 2026
+
+* [BugFix] Fixed an issue where starting a building demolition, the demolition countdown would not appear in the Village Overview or Main Building's Demolish Buildings views.
+* [BugFix] Fixed an issue where upgrading a building would prevent a separate building from being downgraded.
+* [BugFix] Fixed an issue where Village Overview's demolition table would not appear unless Main Building was at level 11.
+* [TechnicalImprovement] Reworded some error descriptions for more clarity.
+
 ## Version 0.4.20
 
 #### May 15, 2026

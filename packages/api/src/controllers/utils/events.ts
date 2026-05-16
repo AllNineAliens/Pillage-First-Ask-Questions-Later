@@ -36,7 +36,6 @@ import {
   isAdventurePointIncreaseEvent,
   isAdventureTroopMovementEvent,
   isBuildingConstructionEvent,
-  isBuildingDestructionEvent,
   isBuildingDowngradeEvent,
   isBuildingEvent,
   isBuildingLevelChangeEvent,
@@ -225,6 +224,8 @@ export const validateEventCreationPrerequisites = (
     if (currentUnitUpgradeLevel >= level) {
       throw new Error('Unit upgrade level already exists');
     }
+
+    return;
   }
 
   if (isUnitResearchEvent(event)) {
@@ -282,6 +283,8 @@ export const validateEventCreationPrerequisites = (
     if (hasAlreadyResearchedUnitsWithSameIdAndVillage) {
       throw new Error('Unit is already researched');
     }
+
+    return;
   }
 
   if (isTroopTrainingEvent(event)) {
@@ -350,92 +353,57 @@ export const validateEventCreationPrerequisites = (
     if (!doesUnitTrainingBuildingExist) {
       throw new Error('Unit training building does not exist');
     }
-  }
 
-  if (isBuildingLevelChangeEvent(event)) {
-    const { buildingId, level } = event;
-    const { maxLevel } = getBuildingDefinition(buildingId);
-
-    if (level > maxLevel) {
-      throw new Error('Building level cannot exceed max level');
-    }
+    return;
   }
 
   if (isBuildingEvent(event)) {
-    const { villageId, buildingFieldId } = event;
+    const { villageId, buildingFieldId, buildingId, level } = event;
 
-    const { buildingEventsCount } = database.selectObject({
-      sql: `
-        WITH
-          player_tribe AS (
-            SELECT ti.tribe AS tribe
-            FROM
-              villages v
-                JOIN players p ON p.id = v.player_id
-                JOIN tribe_ids ti ON p.tribe_id = ti.id
-            WHERE
-              v.id = $village_id
-            )
-        SELECT
-          pt.tribe,
-          (
-            SELECT COUNT(*)
-            FROM
-              events e
-            WHERE
-              e.type IN ('buildingConstruction', 'buildingLevelChange')
-              AND e.village_id = $village_id
-              AND NOT (
-                e.type = 'buildingLevelChange'
-                  AND CAST(JSON_EXTRACT(e.meta, '$.previousLevel') AS INTEGER) >
-                      CAST(JSON_EXTRACT(e.meta, '$.level') AS INTEGER)
-                )
-              AND (
-                -- If player is not Romans, include all building events
-                pt.tribe <> 'romans'
-                  -- If Romans, only include events from the same "half" (<=18 or >18)
-                  OR (
-                  (CAST(JSON_EXTRACT(e.meta, '$.buildingFieldId') AS INTEGER) <= 18 AND
-                   CAST($building_field_id AS INTEGER) <= 18)
-                    OR
-                  (CAST(JSON_EXTRACT(e.meta, '$.buildingFieldId') AS INTEGER) > 18 AND
-                   CAST($building_field_id AS INTEGER) > 18)
-                  )
-                )
-            ) AS buildingEventsCount
-        FROM
-          player_tribe pt;
-      `,
-      bind: {
-        $village_id: villageId,
-        $building_field_id: buildingFieldId,
-      },
-      schema: z.strictObject({
-        tribe: playableTribeSchema,
-        buildingEventsCount: z.number(),
-      }),
-    })!;
+    if (isBuildingDowngradeEvent(event)) {
+      const mainBuildingLevel = database.selectValue({
+        sql: `
+          SELECT
+            COALESCE(
+              (
+                SELECT
+                  bf.level
+                FROM
+                  building_fields bf
+                    JOIN building_ids bi ON bi.id = bf.building_id
+                WHERE
+                  bf.village_id = $village_id
+                  AND bi.building = 'MAIN_BUILDING'
+                LIMIT 1
+                ),
+              0
+            ) AS main_building_level;
+        `,
+        bind: {
+          $village_id: villageId,
+        },
+        schema: z.number(),
+      })!;
 
-    if (buildingEventsCount >= 1) {
-      throw new Error('Building construction queue is full');
-    }
-  }
+      if (mainBuildingLevel < 10) {
+        throw new Error(
+          'Main building level 10 is required to downgrade buildings',
+        );
+      }
 
-  if (isBuildingDestructionEvent(event)) {
-    const { villageId } = event;
-
-    const hasOngoingBuildingDestructionEventInThisVillage =
-      database.selectValue({
+      const hasOngoingDowngradeEvent = database.selectValue({
         sql: `
           SELECT
             EXISTS
             (
               SELECT 1
               FROM
-                events
+                events e
               WHERE
-                type = 'buildingDestruction'
-                AND village_id = $village_id
+                e.village_id = $village_id
+                AND e.type IN ('buildingLevelChange', 'buildingDestruction')
+                AND CAST(JSON_EXTRACT(e.meta, '$.previousLevel') AS INTEGER) >
+                    CAST(JSON_EXTRACT(e.meta, '$.level') AS INTEGER)
               ) AS event_exists;
         `,
         bind: {
@@ -444,41 +412,96 @@ export const validateEventCreationPrerequisites = (
         schema: z.coerce.boolean(),
       });
 
-    if (hasOngoingBuildingDestructionEventInThisVillage) {
-      throw new Error('Main building is busy');
+      if (hasOngoingDowngradeEvent) {
+        throw new Error('Main building is busy');
+      }
+
+      return;
     }
-  }
 
-  if (isBuildingConstructionEvent(event)) {
-    const { villageId, buildingFieldId } = event;
-
-    const isBuildingFieldOccupied = database.selectValue({
+    const buildingEventsCount = database.selectValue({
       sql: `
         SELECT
-          EXISTS
+          COUNT(*) AS buildingEventsCount
+        FROM
           (
-            SELECT 1
+            SELECT *,
+              CAST(JSON_EXTRACT(meta, '$.buildingFieldId') AS INTEGER) AS building_field_id
             FROM
-              building_fields
+              events
             WHERE
               village_id = $village_id
-              AND field_id = $building_field_id
-              AND level > 0
-            ) AS is_occupied;
+            ) e
+            JOIN villages v ON v.id = e.village_id
+            JOIN players p ON p.id = v.player_id
+            JOIN tribe_ids ti ON p.tribe_id = ti.id
+        WHERE
+          e.type IN ('buildingConstruction', 'buildingLevelChange')
+          AND NOT (
+            e.type IN ('buildingLevelChange', 'buildingDestruction')
+              AND CAST(JSON_EXTRACT(e.meta, '$.previousLevel') AS INTEGER) >
+                  CAST(JSON_EXTRACT(e.meta, '$.level') AS INTEGER)
+            )
+          AND (
+            -- If player is not Romans, include all building events
+            ti.tribe <> 'romans'
+              -- If Romans, only include events from the same "half" (<=18 or >18)
+              OR (
+              (e.building_field_id <= 18 AND CAST($building_field_id AS INTEGER) <= 18)
+                OR
+              (e.building_field_id > 18 AND CAST($building_field_id AS INTEGER) > 18)
+              )
+            );
       `,
       bind: {
         $village_id: villageId,
         $building_field_id: buildingFieldId,
       },
-      schema: z.coerce.boolean(),
-    });
+      schema: z.number(),
+    })!;
 
-    if (isBuildingFieldOccupied) {
-      throw new Error('Building field is already occupied');
+    if (buildingEventsCount >= 1) {
+      throw new Error('Building construction queue is full');
     }
-  }
 
-  if (isScheduledBuildingEvent(event)) {
+    if (isBuildingConstructionEvent(event)) {
+      const { villageId, buildingFieldId } = event;
+
+      const isBuildingFieldOccupied = database.selectValue({
+        sql: `
+          SELECT
+            EXISTS
+            (
+              SELECT 1
+              FROM
+                building_fields
+              WHERE
+                village_id = $village_id
+                AND field_id = $building_field_id
+                AND level > 0
+              ) AS is_occupied;
+        `,
+        bind: {
+          $village_id: villageId,
+          $building_field_id: buildingFieldId,
+        },
+        schema: z.coerce.boolean(),
+      });
+
+      if (isBuildingFieldOccupied) {
+        throw new Error('Building field is already occupied');
+      }
+
+      return;
+    }
+
+    const { maxLevel } = getBuildingDefinition(buildingId);
+
+    if (level > maxLevel) {
+      throw new Error('Building level cannot exceed max level');
+    }
+
+    return;
   }
 
   if (isHeroRevivalEvent(event)) {
@@ -491,6 +514,8 @@ export const validateEventCreationPrerequisites = (
     if (isHeroAlive) {
       throw new Error('Hero is already alive');
     }
+
+    return;
   }
 
   if (isAdventureTroopMovementEvent(event)) {
@@ -519,6 +544,8 @@ export const validateEventCreationPrerequisites = (
     if (adventurePoints === 0) {
       throw new Error('No adventure points available');
     }
+
+    return;
   }
 
   if (isTroopMovementEvent(event)) {
@@ -674,32 +701,10 @@ export const getEventDuration = (
   database: DbFacade,
   event: GameEvent,
 ): number => {
-  if (isBuildingConstructionEvent(event)) {
-    return 0;
-  }
-
-  if (isBuildingDestructionEvent(event)) {
-    const { speed } = database.selectObject({
-      sql: 'SELECT speed FROM servers LIMIT 1;',
-      schema: z.strictObject({
-        speed: speedSchema,
-      }),
-    })!;
-
-    return calculateBuildingDestructionDuration(event.previousLevel, speed);
-  }
-
-  if (isBuildingLevelChangeEvent(event) || isScheduledBuildingEvent(event)) {
-    const isInstantBuildingConstructionEnabled = database.selectValue({
-      sql: 'SELECT is_instant_building_construction_enabled FROM developer_settings',
-      schema: z.coerce.boolean(),
-    });
-
-    if (isInstantBuildingConstructionEnabled) {
+  if (isBuildingEvent(event)) {
+    if (isBuildingConstructionEvent(event)) {
       return 0;
     }
-
-    const { villageId, buildingId, level } = event;
 
     if (isBuildingDowngradeEvent(event)) {
       const { speed } = database.selectObject({
@@ -714,6 +719,17 @@ export const getEventDuration = (
         speed,
       );
     }
+
+    const isInstantBuildingConstructionEnabled = database.selectValue({
+      sql: 'SELECT is_instant_building_construction_enabled FROM developer_settings',
+      schema: z.coerce.boolean(),
+    });
+
+    if (isInstantBuildingConstructionEnabled) {
+      return 0;
+    }
+
+    const { villageId, buildingId, level } = event;
 
     const effects = database.selectObjects({
       sql: selectAllRelevantEffectsByIdQuery,
@@ -737,6 +753,7 @@ export const getEventDuration = (
 
     return baseBuildingDuration * total;
   }
+
   if (isUnitResearchEvent(event)) {
     const isInstantUnitResearchEnabled = database.selectValue({
       sql: 'SELECT is_instant_unit_research_enabled FROM developer_settings',
@@ -766,6 +783,7 @@ export const getEventDuration = (
 
     return unitResearchDurationModifier * calculateUnitResearchDuration(unitId);
   }
+
   if (isUnitImprovementEvent(event)) {
     const isInstantUnitImprovementEnabled = database.selectValue({
       sql: 'SELECT is_instant_unit_improvement_enabled FROM developer_settings',
@@ -798,6 +816,7 @@ export const getEventDuration = (
       calculateUnitUpgradeDurationForLevel(unitId, level)
     );
   }
+
   if (isTroopTrainingEvent(event)) {
     const isInstantUnitTrainingEnabled = database.selectValue({
       sql: 'SELECT is_instant_unit_training_enabled FROM developer_settings',
@@ -829,6 +848,7 @@ export const getEventDuration = (
 
     return total * baseRecruitmentDuration;
   }
+
   if (isAdventurePointIncreaseEvent(event)) {
     const { created_at, speed } = database.selectObject({
       sql: 'SELECT created_at, speed FROM servers LIMIT 1;',
@@ -924,6 +944,7 @@ export const getEventDuration = (
 
     return calculateHealthRegenerationEventDuration(healthRegeneration, speed);
   }
+
   if (isLoyaltyIncreaseEvent(event)) {
     const { createdAt, speed } = database.selectObject({
       sql: 'SELECT created_at AS createdAt, speed FROM servers LIMIT 1;',
@@ -1018,39 +1039,32 @@ export const getEventStartTime = (
 
     const resolvesAt = database.selectValue({
       sql: `
-        WITH
-          player_tribe AS (
-            SELECT ti.tribe AS tribe
-            FROM
-              villages v
-                JOIN players p ON p.id = v.player_id
-                JOIN tribe_ids ti ON p.tribe_id = ti.id
-            WHERE
-              v.id = $village_id
-            )
         SELECT
-          COALESCE(
-            (
-              SELECT MAX(e.resolves_at)
-              FROM
-                events e,
-                player_tribe pt
-              WHERE
-                e.type = 'buildingLevelChange'
-                AND e.village_id = $village_id
-                AND (
-                  -- If player is not Romans, include all building events
-                  pt.tribe <> 'romans'
-                    -- If Romans, only include events from the same "half" (<=18 or >18)
-                    OR (
-                    (CAST(JSON_EXTRACT(e.meta, '$.buildingFieldId') AS INTEGER) <= 18 AND $building_field_id <= 18)
-                      OR
-                    (CAST(JSON_EXTRACT(e.meta, '$.buildingFieldId') AS INTEGER) > 18 AND $building_field_id > 18)
-                    )
-                  )
-              ),
-            $now
-          ) AS resolves_at;
+          COALESCE(MAX(e.resolves_at), $now) AS resolves_at
+        FROM
+          (
+            SELECT *,
+              CAST(JSON_EXTRACT(meta, '$.buildingFieldId') AS INTEGER) AS building_field_id
+            FROM
+              events
+            WHERE
+              village_id = $village_id
+            ) e
+            JOIN villages v ON v.id = e.village_id
+            JOIN players p ON p.id = v.player_id
+            JOIN tribe_ids ti ON p.tribe_id = ti.id
+        WHERE
+          e.type = 'buildingLevelChange'
+          AND (
+            -- If player is not Romans, include all building events
+            ti.tribe <> 'romans'
+              -- If Romans, only include events from the same "half" (<=18 or >18)
+              OR (
+              (e.building_field_id <= 18 AND $building_field_id <= 18)
+                OR
+              (e.building_field_id > 18 AND $building_field_id > 18)
+              )
+            );
       `,
       bind: {
         $village_id: villageId,
