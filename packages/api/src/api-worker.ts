@@ -1,6 +1,5 @@
 import type {
   OpfsSAHPoolDatabase,
-  SAHPoolUtil,
   Sqlite3Static,
 } from '@sqlite.org/sqlite-wasm';
 import { z } from 'zod';
@@ -15,6 +14,7 @@ import {
   createDbFacade,
   type DbFacade,
 } from '@pillage-first/utils/facades/database';
+import { retryWhenFileSystemLocked } from '@pillage-first/utils/opfs-lock-retry';
 import {
   parseAppVersion,
   parseDatabaseUserVersion,
@@ -29,7 +29,6 @@ import {
 import { createSchedulerDataSource } from './scheduler/scheduler-data-source';
 
 let sqlite3: Sqlite3Static | null = null;
-let opfsSahPool: SAHPoolUtil | null = null;
 let database: OpfsSAHPoolDatabase | null = null;
 let dbFacade: DbFacade | null = null;
 
@@ -51,16 +50,25 @@ globalThis.addEventListener('message', async (event: MessageEvent) => {
           sqlite3 = await sqlite3InitModule();
         }
 
-        opfsSahPool = await sqlite3.installOpfsSAHPoolVfs({
+        const opfsSahPoolOptions = {
           directory: `/pillage-first-ask-questions-later/${serverSlug}`,
-        });
+          forceReinitIfPreviouslyFailed: true,
+        };
+
+        const initializedSqlite3 = sqlite3;
+
+        const initializedOpfsSahPool = await retryWhenFileSystemLocked(() =>
+          initializedSqlite3.installOpfsSAHPoolVfs(opfsSahPoolOptions),
+        );
 
         // Database doesn't exist, common when opening game worlds created before the engine rewrite or when opening a deleted game world
-        if (opfsSahPool.getFileCount() === 0) {
+        if (initializedOpfsSahPool.getFileCount() === 0) {
           throw new OutdatedDatabaseSchemaError();
         }
 
-        database = new opfsSahPool.OpfsSAHPoolDb(`/${serverSlug}.sqlite3`);
+        database = new initializedOpfsSahPool.OpfsSAHPoolDb(
+          `/${serverSlug}.sqlite3`,
+        );
 
         dbFacade = createDbFacade(database, false);
 
