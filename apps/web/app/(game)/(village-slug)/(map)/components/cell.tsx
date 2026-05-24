@@ -1,6 +1,5 @@
 import { clsx } from 'clsx';
-import { memo } from 'react';
-import { areEqual, type GridChildComponentProps } from 'react-window';
+import type { CellComponentProps } from 'react-window';
 import type { MapFilters } from '@pillage-first/types/models/map-filters';
 import type { MapMarker } from '@pillage-first/types/models/map-marker';
 import type { Preferences } from '@pillage-first/types/models/preferences';
@@ -167,50 +166,61 @@ const getTileClassNames = (
   return '';
 };
 
-type CellProps = GridChildComponentProps<CellBaseProps>;
+export const Cell = ({
+  ariaAttributes,
+  style,
+  rowIndex,
+  columnIndex,
+  map,
+  gridSize,
+  mapFilters,
+  magnification,
+  onClick,
+  getReputation,
+  ...cellProps
+}: CellComponentProps<CellBaseProps>) => {
+  const tileIndex = gridSize * rowIndex + columnIndex;
+  const tileId = tileIndex + 1;
 
-export const Cell = memo<CellProps>(
-  ({ data, style, rowIndex, columnIndex }) => {
-    const { map, gridSize, mapFilters, magnification, onClick, getReputation } =
-      data;
+  const tile = map[tileIndex];
+  const isBorderTile =
+    tile.type === 'oasis' &&
+    !tile.attributes.isOccupiable &&
+    BORDER_TILES_OASIS_VARIANTS.has(tile.attributes.oasisGraphics);
 
-    const tileIndex = gridSize * rowIndex + columnIndex;
-    const tileId = tileIndex + 1;
+  const className = isBorderTile
+    ? clsx(
+        cellStyles.tile,
+        cellStyles[`border-tile-${tile.attributes.oasisGraphics}`],
+      )
+    : getTileClassNames(
+        tile,
+        getReputation,
+        magnification,
+        mapFilters.shouldShowFactionReputation,
+      );
 
-    const tile = map[tileIndex];
-    const isBorderTile =
-      tile.type === 'oasis' &&
-      !tile.attributes.isOccupiable &&
-      BORDER_TILES_OASIS_VARIANTS.has(tile.attributes.oasisGraphics);
-
-    const className = isBorderTile
-      ? clsx(
-          cellStyles.tile,
-          cellStyles[`border-tile-${tile.attributes.oasisGraphics}`],
-        )
-      : getTileClassNames(
-          tile,
-          getReputation,
-          magnification,
-          mapFilters.shouldShowFactionReputation,
-        );
-
-    return (
-      <button
-        onClick={() => onClick(tileId)}
-        type="button"
-        style={style}
-        data-tile-id={tileId}
-        className={className}
-      >
-        {!isBorderTile && (
-          <CellIcons
-            tile={tile}
-            {...data}
-          />
-        )}
-      </button>
-    );
-  },
-  areEqual,
-);
+  return (
+    <button
+      {...ariaAttributes}
+      onClick={() => onClick(tileId)}
+      type="button"
+      style={style}
+      data-tile-id={tileId}
+      className={className}
+    >
+      {!isBorderTile && (
+        <CellIcons
+          tile={tile}
+          map={map}
+          gridSize={gridSize}
+          mapFilters={mapFilters}
+          magnification={magnification}
+          onClick={onClick}
+          getReputation={getReputation}
+          {...cellProps}
+        />
+      )}
+    </button>
+  );
+};
