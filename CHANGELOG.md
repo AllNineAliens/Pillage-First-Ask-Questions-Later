@@ -20,7 +20,6 @@
 #### Jun 1, 2026
 
 * [BugFix] Fixed overflowing tables on mobile devices.
-* [BugFix] Fixed overflowing tables on mobile devices.
 * [BugFix] Added missing bookmark functionality to Rally Point's Send troops view.
 * [TechnicalImprovement] Reworked backend structure.
 * [TechnicalImprovement] SQL queries with parameters now throw a type error if said parameters are not provided.
