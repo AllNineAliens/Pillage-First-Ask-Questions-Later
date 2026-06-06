@@ -173,33 +173,38 @@ export const startHeroAdventure = createController(
     },
   },
 )(({ database, path: { playerId } }) => {
-  const { health, tileId, villageId, x, y } = database.selectObject({
-    sql: `
-      SELECT
-        h.health,
-        t.tile_id as tileId,
-        h.village_id as villageId,
-        tl.x,
-        tl.y
-      FROM
-        heroes h
-          JOIN troops t ON h.id = t.unit_id
-          JOIN unit_ids ui ON t.unit_id = ui.id
-          JOIN tiles tl ON t.tile_id = tl.id
-      WHERE
-        h.player_id = $player_id
-        AND ui.unit = 'HERO'
-      LIMIT 1;
-    `,
-    bind: { $player_id: playerId },
-    schema: z.strictObject({
-      health: z.number(),
-      tileId: z.number(),
-      villageId: z.number(),
-      x: z.number(),
-      y: z.number(),
-    }),
-  })!;
+  const { health, tileId, sourceTileId, villageId, x, y } =
+    database.selectObject({
+      sql: `
+        SELECT
+          h.health,
+          t.tile_id as tileId,
+          t.source_tile_id as sourceTileId,
+          v.id as villageId,
+          tl.x,
+          tl.y
+        FROM
+          heroes h
+            JOIN troops t ON 1 = 1
+            JOIN unit_ids ui ON t.unit_id = ui.id
+            JOIN villages v ON v.tile_id = t.tile_id
+              AND v.player_id = h.player_id
+            JOIN tiles tl ON t.tile_id = tl.id
+        WHERE
+          h.player_id = $player_id
+          AND ui.unit = 'HERO'
+        LIMIT 1;
+      `,
+      bind: { $player_id: playerId },
+      schema: z.strictObject({
+        health: z.number(),
+        tileId: z.number(),
+        sourceTileId: z.number(),
+        villageId: z.number(),
+        x: z.number(),
+        y: z.number(),
+      }),
+    })!;
 
   if (health <= 0) {
     throw new Error('Hero is dead');
@@ -215,7 +220,7 @@ export const startHeroAdventure = createController(
         unitId: 'HERO',
         amount: 1,
         tileId,
-        source: tileId,
+        source: sourceTileId,
       },
     ],
   });
