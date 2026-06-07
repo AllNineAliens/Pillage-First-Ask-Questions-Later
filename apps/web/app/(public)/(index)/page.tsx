@@ -138,6 +138,11 @@ const SocialProofSection = () => {
             author="Laarva on Discord"
             body="Very excited for new updates. Really loving what I've seen so far I have been wanting an offline game like this forever. Keep up the good work!"
           />
+          <TwitterSocialProofCard
+            author="Orcdev"
+            body="Here are some amazing open source projects I found: Pillage First Ask Questions Later by @jurerotar"
+            href="https://x.com/orcdev/status/2026055804646723633"
+          />
           <DiscordSocialProofCard
             author="hoangnguyen5639 on Discord"
             body="I love this game so much, waiting for any update!"
@@ -146,11 +151,7 @@ const SocialProofSection = () => {
             author="AllNineAliens on Discord"
             body="I'd just like to say, that I love this project! I've thought about making something similar time and time again! Last time I played Travian was in 2015, and I haven't been able to scratch that itch since."
           />
-          <TwitterSocialProofCard
-            author="Orcdev"
-            body="Here are some amazing open source projects I found: Pillage First Ask Questions Later by @jurerotar"
-            href="https://x.com/orcdev/status/2026055804646723633"
-          />
+
           <DiscordSocialProofCard
             author="Neme on Discord"
             body="I love the idea of this project. I was actually missing this kind of game as my work hours do not really allow me to 24/7 Travian anymore."
@@ -170,6 +171,14 @@ const SocialProofSection = () => {
           <DiscordSocialProofCard
             author="Joseph on Discord"
             body="I think the idea is genius and really fun."
+          />
+          <DiscordSocialProofCard
+            author="Stellar on Discord"
+            body="I’ve been dreaming of an offline version, and now it’s finally in the making. Amazing!"
+          />
+          <DiscordSocialProofCard
+            author="Foxplay on Discord"
+            body="I'm so happy to get a chance playing this again with a few tweeks in quality of life, and a few more things, that make it so much better. Thank you very much, looking forward to this!"
           />
         </SocialProofMasonry>
       </div>
