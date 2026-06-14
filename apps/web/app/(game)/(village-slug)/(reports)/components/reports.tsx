@@ -7,8 +7,16 @@ import {
 } from 'app/(game)/(village-slug)/components/building-layout';
 import { usePagination } from 'app/(game)/(village-slug)/hooks/use-pagination';
 import { Text } from 'app/components/text';
-import { Alert } from 'app/components/ui/alert';
 import { Pagination } from 'app/components/ui/pagination';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableHeaderCell,
+  TableRow,
+} from 'app/components/ui/table';
+import { useReports } from '../../hooks/use-reports';
 
 export const Reports = () => {
   const { t } = useTranslation();
@@ -19,7 +27,8 @@ export const Reports = () => {
     handlePageChange,
   } = useReportFilters();
 
-  const pagination = usePagination([], 20, page);
+  const { reports } = useReports();
+  const pagination = usePagination(reports, 20, page);
 
   return (
     <Section>
@@ -35,9 +44,41 @@ export const Reports = () => {
         reportFilters={reportFilters}
         onChange={onReportFiltersChange}
       />
-      <Alert variant="warning">
-        {t('This page is still under development')}
-      </Alert>
+
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHeaderCell>{t('Id')}</TableHeaderCell>
+            <TableHeaderCell>{t('Type')}</TableHeaderCell>
+            <TableHeaderCell>{t('Subject')}</TableHeaderCell>
+            <TableHeaderCell>{t('Date')}</TableHeaderCell>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {pagination.currentPageItems.map((report) => (
+            <TableRow key={report.id}>
+              <TableCell>
+                <span className="inline-flex justify-center">{report.id}</span>
+              </TableCell>
+              <TableCell>{report.type}</TableCell>
+              <TableCell />
+              <TableCell>
+                {new Date(report.timestamp * 1000).toLocaleString()}
+              </TableCell>
+            </TableRow>
+          ))}
+          {reports.length === 0 && (
+            <TableRow>
+              <TableCell
+                colSpan="3"
+                className="text-center py-8"
+              >
+                {t('No reports found yet.')}
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
       <div className="flex w-full justify-end">
         <Pagination
           {...pagination}
